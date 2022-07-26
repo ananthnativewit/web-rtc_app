@@ -1,0 +1,68 @@
+{
+  "project_info": {
+    "project_number": "549593533024",
+    "project_id": "rtc-app-f96fd",
+    "storage_bucket": "rtc-app-f96fd.appspot.com"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:549593533024:android:e0f71e90b0bc0c84fe5105",
+        "android_client_info": {
+          "package_name": "com.example.rtc_app"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "549593533024-noivstlj3mhgvh9bs8kmgc2sitej0r97.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyB39CIqliGw_zgppdPXHwR93eLGp2uWd5k"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "549593533024-noivstlj3mhgvh9bs8kmgc2sitej0r97.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:549593533024:android:e571f7c995a9d99ffe5105",
+        "android_client_info": {
+          "package_name": "com.nativewit.rtcapp"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "549593533024-noivstlj3mhgvh9bs8kmgc2sitej0r97.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyB39CIqliGw_zgppdPXHwR93eLGp2uWd5k"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "549593533024-noivstlj3mhgvh9bs8kmgc2sitej0r97.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
