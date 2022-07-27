@@ -1,21 +1,89 @@
+import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
+import 'package:rtc_app/core/view_model.dart';
+import 'package:rtc_app/models/app_state.dart';
+import 'package:rtc_app/provider/app_state_notifier.dart';
+import 'package:flutter_state_notifier/flutter_state_notifier.dart';
+
+import '../models/message.dart';
 
 typedef StreamStateCallback = void Function(MediaStream stream);
 
-class Signaling {
+class AppProvider extends StatelessWidget {
+  const AppProvider({Key? key, required this.child}) : super(key: key);
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return StateNotifierProvider<AppViewModel, AppState>(
+      create: (_) => AppViewModel()..init(),
+      child: child,
+    );
+  }
+}
+
+class AppViewModel extends AppStateNotifier<AppState>
+    implements AppBaseViewModel {
+  AppViewModel() : super(AppState());
+
+  final Completer<void> _completer = Completer();
+
+  @override
+  Future<void> init() async {
+    if (state.isInitializing || _completer.isCompleted) {
+      return _completer.future;
+    }
+    await _init();
+    await _completer.future;
+  }
+
+  Future<void> _init() async {
+    try {
+      setInitializing(true);
+    } catch (e) {
+      _completer.completeError(e);
+    } finally {
+      if (kDebugMode) {
+        print('AppViewModel initialized');
+      }
+      setInitializing(false);
+      _completer.complete();
+    }
+  }
+
+  setInitializing(bool value) {
+    state = state.rebuild((AppStateBuilder p0) => p0.isInitializing = value);
+  }
+
   Map<String, dynamic> configuration = {
     'iceServers': [
       {
-        'urls': [
-          'stun:stun1.l.google.com:19302',
-          'stun:stun2.l.google.com:19302'
-        ]
-      }
-    ]
+        'urls': "stun:openrelay.metered.ca:80",
+      },
+      {
+        'urls': "turn:openrelay.metered.ca:80",
+        'username': "openrelayproject",
+        'credential': "openrelayproject",
+      },
+      {
+        'urls': "turn:openrelay.metered.ca:443",
+        'username': "openrelayproject",
+        'credential': "openrelayproject",
+      },
+      {
+        'urls': "turn:openrelay.metered.ca:443?transport=tcp",
+        'username': "openrelayproject",
+        'credential': "openrelayproject",
+      },
+    ],
   };
 
   RTCPeerConnection? rtcPeerConnection;
+  RTCDataChannel? rtcDataChannel;
   MediaStream? _localStream;
   MediaStream? _remoteStream;
   String? roomId;
@@ -28,6 +96,8 @@ class Signaling {
 
     rtcPeerConnection = await createPeerConnection(configuration);
 
+    await _createDataChannel();
+
     registerPeerConnectionListeners();
 
     _localStream?.getTracks().forEach((track) {
@@ -38,10 +108,20 @@ class Signaling {
 
     rtcPeerConnection?.onIceCandidate = (RTCIceCandidate candidate) {
       callerCandidatesCollection.add(candidate.toMap());
+      state.messages.rebuild(
+          (p0) => p0.add(Message.fromSystem("ICE candidate obtained")));
+    };
+
+    rtcPeerConnection?.onDataChannel = (channel) {
+      state.messages.rebuild(
+          (p0) => p0.add(Message.fromSystem("Received data channel")));
+      _addDataChannel(channel);
     };
 
     RTCSessionDescription offer = await rtcPeerConnection!.createOffer();
     await rtcPeerConnection!.setLocalDescription(offer);
+    state.messages
+        .rebuild((p0) => p0.add(Message.fromSystem("Created offer")));
 
     Map<String, dynamic> roomWithOffer = {'offer': offer.toMap()};
 
@@ -119,9 +199,13 @@ class Signaling {
       await rtcPeerConnection?.setRemoteDescription(
         RTCSessionDescription(offer['sdp'], offer['type']),
       );
+
       var answer = await rtcPeerConnection!.createAnswer();
 
       await rtcPeerConnection!.setLocalDescription(answer);
+
+      state.messages
+          .rebuild((p0) => p0.add(Message.fromSystem("Answer Accepted")));
 
       Map<String, dynamic> roomWithAnswer = {
         'answer': {'type': answer.type, 'sdp': answer.sdp}
@@ -149,7 +233,7 @@ class Signaling {
     RTCVideoRenderer remoteVideo,
   ) async {
     var stream = await navigator.mediaDevices
-        .getUserMedia({'video': true, 'audio': false});
+        .getUserMedia({'video': true, 'audio': true});
 
     localVideo.srcObject = stream;
     _localStream = stream;
@@ -193,5 +277,35 @@ class Signaling {
       onAddRemoteStream?.call(stream);
       _remoteStream = stream;
     };
+  }
+
+  Future<void> _createDataChannel() async {
+    RTCDataChannelInit dataChannelDict = RTCDataChannelInit();
+    RTCDataChannel? channel = await rtcPeerConnection?.createDataChannel(
+        "textchat-chan", dataChannelDict);
+
+    state.messages.rebuild((p0) => p0.add(Message.fromSystem("Created data channel")));
+
+    _addDataChannel(channel!);
+  }
+
+  void _addDataChannel(RTCDataChannel channel) {
+    rtcDataChannel = channel;
+    rtcDataChannel?.onMessage = (data) {
+      state.messages
+          .rebuild((p0) => p0.add(Message.fromUser("OTHER", data.text)));
+    };
+    rtcDataChannel?.onDataChannelState = (s) {
+      state.messages.rebuild(
+          (p0) => p0.add(Message.fromSystem("Data channel state: $s")));
+    };
+  }
+
+  Future<void> sendMessage(String message) async {
+    await rtcDataChannel?.send(RTCDataChannelMessage(message));
+
+    state.messages.rebuild((p0) => p0.add(Message.fromUser("ME", message)));
+
+    print('mess:$message');
   }
 }

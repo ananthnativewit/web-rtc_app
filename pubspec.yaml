@@ -38,10 +38,19 @@ dependencies:
   cloud_firestore: ^3.4.1
   firebase_core: ^1.20.0
   cloud_firestore_web: ^2.4.1
+  built_value: ^8.3.3
+  built_collection: ^5.1.1
+
+  #state
+  provider: ^6.0.3
+  state_notifier: ^0.7.2+1
+  flutter_state_notifier: ^0.7.1
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
+  build_runner: ^2.1.11
+  built_value_generator: ^8.3.3
 
   # The "flutter_lints" package below contains a set of recommended lints to
   # encourage good coding practices. The lint set provided by the package is
