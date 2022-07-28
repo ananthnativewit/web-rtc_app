@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:built_collection/built_collection.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -90,65 +91,74 @@ class AppViewModel extends AppStateNotifier<AppState>
   String? currentRoomText;
   StreamStateCallback? onAddRemoteStream;
 
-  Future<String> createRoom(RTCVideoRenderer remoteRenderer) async {
+  List<Message> messages = [];
+
+  Future<String> createRoom() async {
     FirebaseFirestore db = FirebaseFirestore.instance;
     DocumentReference roomRef = db.collection('rooms').doc();
 
-    rtcPeerConnection = await createPeerConnection(configuration);
+    rtcPeerConnection = await _createPeerConnection(roomRef);
 
     await _createDataChannel();
 
-    registerPeerConnectionListeners();
+    _registerPeerConnectionListeners();
 
-    _localStream?.getTracks().forEach((track) {
-      rtcPeerConnection?.addTrack(track, _localStream!);
-    });
+    _addLocalTracksToStream();
 
-    var callerCandidatesCollection = roomRef.collection('callerCandidates');
+    await _createOffer(roomRef);
 
-    rtcPeerConnection?.onIceCandidate = (RTCIceCandidate candidate) {
-      callerCandidatesCollection.add(candidate.toMap());
-      state.messages.rebuild(
-          (p0) => p0.add(Message.fromSystem("ICE candidate obtained")));
+    _addRemoteTracksToStream();
+
+    await _setRemoteDescriptionAnswer(roomRef);
+
+    _addCalleeCandidates(roomRef);
+
+    return roomRef.id;
+  }
+
+  Future<void> joinRoom(String roomId) async {
+    FirebaseFirestore db = FirebaseFirestore.instance;
+    DocumentReference roomRef = db.collection('rooms').doc(roomId);
+    var roomSnapshot = await roomRef.get();
+
+    messages.add(Message.fromSystem('Joining in room $roomId'));
+
+    state = state.rebuild((p0) => p0.messages = messages.build().toBuilder());
+
+    if (roomSnapshot.exists) {
+      rtcPeerConnection = await createPeerConnection(configuration);
+
+      rtcPeerConnection?.onDataChannel = (channel) {
+        messages.add(Message.fromSystem("Received data channel"));
+        _addDataChannel(channel);
+      };
+
+      _registerPeerConnectionListeners();
+
+      _addLocalTracksToStream();
+
+      _collectCalleeCandidates(roomRef);
+
+      _addRemoteTracksToStream();
+
+      await _setRemoteDescriptionOffer(roomSnapshot);
+
+      await _createAnswer(roomRef);
+
+      _addCallerCandidates(roomRef);
+    }
+  }
+
+  Future<RTCPeerConnection> _createPeerConnection(
+      DocumentReference<Object?> roomRef) async {
+    final con = await createPeerConnection(configuration);
+    con.onIceCandidate = (candidate) {
+      roomRef.collection('callerCandidates').add(candidate.toMap());
     };
+    return con;
+  }
 
-    rtcPeerConnection?.onDataChannel = (channel) {
-      state.messages.rebuild(
-          (p0) => p0.add(Message.fromSystem("Received data channel")));
-      _addDataChannel(channel);
-    };
-
-    RTCSessionDescription offer = await rtcPeerConnection!.createOffer();
-    await rtcPeerConnection!.setLocalDescription(offer);
-    state.messages
-        .rebuild((p0) => p0.add(Message.fromSystem("Created offer")));
-
-    Map<String, dynamic> roomWithOffer = {'offer': offer.toMap()};
-
-    await roomRef.set(roomWithOffer);
-    var roomId = roomRef.id;
-
-    currentRoomText = 'Current room is $roomId - You are the caller!';
-
-    rtcPeerConnection?.onTrack = (RTCTrackEvent event) {
-      event.streams[0].getTracks().forEach((track) {
-        _remoteStream?.addTrack(track);
-      });
-    };
-
-    roomRef.snapshots().listen((snapshot) async {
-      Map<String, dynamic> data = snapshot.data() as Map<String, dynamic>;
-      if (rtcPeerConnection?.getRemoteDescription() != null &&
-          data['answer'] != null) {
-        var answer = RTCSessionDescription(
-          data['answer']['sdp'],
-          data['answer']['type'],
-        );
-
-        await rtcPeerConnection?.setRemoteDescription(answer);
-      }
-    });
-
+  void _addCalleeCandidates(DocumentReference<Object?> roomRef) {
     roomRef.collection('calleeCandidates').snapshots().listen((snapshot) {
       for (var change in snapshot.docChanges) {
         if (change.type == DocumentChangeType.added) {
@@ -164,68 +174,91 @@ class AppViewModel extends AppStateNotifier<AppState>
         }
       }
     });
-
-    return roomId;
   }
 
-  Future<void> joinRoom(String roomId, RTCVideoRenderer remoteVideo) async {
-    FirebaseFirestore db = FirebaseFirestore.instance;
-    DocumentReference roomRef = db.collection('rooms').doc(roomId);
-    var roomSnapshot = await roomRef.get();
+  Future<void> _setRemoteDescriptionAnswer(
+      DocumentReference<Object?> roomRef) async {
+    roomRef.snapshots().listen((snapshot) async {
+      Map<String, dynamic> data = snapshot.data() as Map<String, dynamic>;
+      if (rtcPeerConnection?.getRemoteDescription() != null &&
+          data['answer'] != null) {
+        var answer = RTCSessionDescription(
+          data['answer']['sdp'],
+          data['answer']['type'],
+        );
 
-    if (roomSnapshot.exists) {
-      rtcPeerConnection = await createPeerConnection(configuration);
+        await rtcPeerConnection?.setRemoteDescription(answer);
+      }
+    });
+  }
 
-      registerPeerConnectionListeners();
-
-      _localStream?.getTracks().forEach((track) {
-        rtcPeerConnection?.addTrack(track, _localStream!);
+  void _addRemoteTracksToStream() {
+    rtcPeerConnection?.onTrack = (RTCTrackEvent event) {
+      event.streams[0].getTracks().forEach((track) {
+        _remoteStream?.addTrack(track);
       });
+    };
+  }
 
-      var calleeCandidatesCollection = roomRef.collection('calleeCandidates');
-      rtcPeerConnection!.onIceCandidate = (RTCIceCandidate candidate) {
-        calleeCandidatesCollection.add(candidate.toMap());
-      };
+  Future<void> _createOffer(DocumentReference<Object?> roomRef) async {
+    RTCSessionDescription offer = await rtcPeerConnection!.createOffer();
+    await rtcPeerConnection!.setLocalDescription(offer);
+    messages.add(Message.fromSystem("Created offer"));
+    state = state.rebuild((p0) => p0.messages = messages.build().toBuilder());
 
-      rtcPeerConnection?.onTrack = (RTCTrackEvent event) {
-        event.streams[0].getTracks().forEach((track) {
-          _remoteStream?.addTrack(track);
-        });
-      };
+    Map<String, dynamic> roomWithOffer = {'offer': offer.toMap()};
 
-      var data = roomSnapshot.data() as Map<String, dynamic>;
+    await roomRef.set(roomWithOffer);
+  }
 
-      var offer = data['offer'];
-      await rtcPeerConnection?.setRemoteDescription(
-        RTCSessionDescription(offer['sdp'], offer['type']),
-      );
+  void _addLocalTracksToStream() {
+    _localStream?.getTracks().forEach((track) {
+      rtcPeerConnection?.addTrack(track, _localStream!);
+    });
+  }
 
-      var answer = await rtcPeerConnection!.createAnswer();
+  void _addCallerCandidates(DocumentReference<Object?> roomRef) {
+    roomRef.collection('callerCandidates').snapshots().listen((snapshot) {
+      for (var document in snapshot.docChanges) {
+        var data = document.doc.data() as Map<String, dynamic>;
+        rtcPeerConnection!.addCandidate(
+          RTCIceCandidate(
+            data['candidate'],
+            data['sdpMid'],
+            data['sdpMLineIndex'],
+          ),
+        );
+      }
+    });
+  }
 
-      await rtcPeerConnection!.setLocalDescription(answer);
+  Future<void> _createAnswer(DocumentReference<Object?> roomRef) async {
+    var answer = await rtcPeerConnection!.createAnswer();
 
-      state.messages
-          .rebuild((p0) => p0.add(Message.fromSystem("Answer Accepted")));
+    await rtcPeerConnection!.setLocalDescription(answer);
 
-      Map<String, dynamic> roomWithAnswer = {
-        'answer': {'type': answer.type, 'sdp': answer.sdp}
-      };
+    Map<String, dynamic> roomWithAnswer = {
+      'answer': {'type': answer.type, 'sdp': answer.sdp}
+    };
 
-      await roomRef.update(roomWithAnswer);
+    await roomRef.update(roomWithAnswer);
+  }
 
-      roomRef.collection('callerCandidates').snapshots().listen((snapshot) {
-        for (var document in snapshot.docChanges) {
-          var data = document.doc.data() as Map<String, dynamic>;
-          rtcPeerConnection!.addCandidate(
-            RTCIceCandidate(
-              data['candidate'],
-              data['sdpMid'],
-              data['sdpMLineIndex'],
-            ),
-          );
-        }
-      });
-    }
+  Future<void> _setRemoteDescriptionOffer(
+      DocumentSnapshot<Object?> roomSnapshot) async {
+    var data = roomSnapshot.data() as Map<String, dynamic>;
+
+    var offer = data['offer'];
+    await rtcPeerConnection?.setRemoteDescription(
+      RTCSessionDescription(offer['sdp'], offer['type']),
+    );
+  }
+
+  void _collectCalleeCandidates(DocumentReference<Object?> roomRef) {
+    var calleeCandidatesCollection = roomRef.collection('calleeCandidates');
+    rtcPeerConnection!.onIceCandidate = (RTCIceCandidate candidate) {
+      calleeCandidatesCollection.add(candidate.toMap());
+    };
   }
 
   Future<void> openUserMedia(
@@ -272,7 +305,7 @@ class AppViewModel extends AppStateNotifier<AppState>
     _remoteStream?.dispose();
   }
 
-  void registerPeerConnectionListeners() {
+  void _registerPeerConnectionListeners() {
     rtcPeerConnection?.onAddStream = (MediaStream stream) {
       onAddRemoteStream?.call(stream);
       _remoteStream = stream;
@@ -284,28 +317,32 @@ class AppViewModel extends AppStateNotifier<AppState>
     RTCDataChannel? channel = await rtcPeerConnection?.createDataChannel(
         "textchat-chan", dataChannelDict);
 
-    state.messages.rebuild((p0) => p0.add(Message.fromSystem("Created data channel")));
+    messages.add(Message.fromSystem("Created data channel"));
+
+    state = state.rebuild((p0) => p0.messages = messages.build().toBuilder());
 
     _addDataChannel(channel!);
   }
 
   void _addDataChannel(RTCDataChannel channel) {
     rtcDataChannel = channel;
-    rtcDataChannel?.onMessage = (data) {
-      state.messages
-          .rebuild((p0) => p0.add(Message.fromUser("OTHER", data.text)));
-    };
+
     rtcDataChannel?.onDataChannelState = (s) {
-      state.messages.rebuild(
-          (p0) => p0.add(Message.fromSystem("Data channel state: $s")));
+      messages.add(Message.fromSystem("Data channel state: $s"));
+      state = state.rebuild((p0) => p0.messages = messages.build().toBuilder());
+    };
+
+    rtcDataChannel?.onMessage = (data) {
+      messages.add(Message.fromUser("OTHER", data.text));
+      state = state.rebuild((p0) => p0.messages = messages.build().toBuilder());
     };
   }
 
   Future<void> sendMessage(String message) async {
     await rtcDataChannel?.send(RTCDataChannelMessage(message));
 
-    state.messages.rebuild((p0) => p0.add(Message.fromUser("ME", message)));
+    messages.add(Message.fromUser("ME", message));
 
-    print('mess:$message');
+    state = state.rebuild((p0) => p0.messages = messages.build().toBuilder());
   }
 }
