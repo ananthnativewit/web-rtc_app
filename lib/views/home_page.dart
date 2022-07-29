@@ -40,6 +40,7 @@ class _HomePageState extends State<HomePage> with AppProviderMixin<HomePage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: Colors.grey[200],
       appBar: AppBar(
         title: const Text("WebRTC App"),
         actions: [
@@ -75,7 +76,7 @@ class _HomePageState extends State<HomePage> with AppProviderMixin<HomePage> {
                 decoration: InputDecoration(
                     hintText: 'Enter the Room ID',
                     filled: true,
-                    fillColor: Colors.grey[200],
+                    fillColor: Colors.grey[300],
                     focusedBorder: OutlineInputBorder(
                       borderSide: const BorderSide(color: Colors.amber),
                       borderRadius: BorderRadius.circular(10.0),
@@ -114,17 +115,20 @@ class _HomePageState extends State<HomePage> with AppProviderMixin<HomePage> {
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
                           Expanded(
-                              child:
-                                  RTCVideoView(_localRenderer, mirror: true)),
-                          Expanded(child: RTCVideoView(_remoteRenderer)),
+                            child: RTCVideoView(_localRenderer, mirror: true),
+                          ),
+                          Expanded(
+                            child: RTCVideoView(_remoteRenderer),
+                          ),
                         ],
                       )
                     : Center(
                         child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
                           children: const <Widget>[
                             Text(
                                 'Create a room and invite other with the code'),
-                            Text('Or'),
+                            Text('or'),
                             Text('Enter the room Id and click join room'),
                           ],
                         ),
@@ -132,7 +136,7 @@ class _HomePageState extends State<HomePage> with AppProviderMixin<HomePage> {
               ),
             ),
             Expanded(
-              flex: 4,
+              flex: 1,
               child: Padding(
                 padding: const EdgeInsets.all(8.0),
                 child: ListView.builder(
@@ -140,13 +144,65 @@ class _HomePageState extends State<HomePage> with AppProviderMixin<HomePage> {
                   itemCount: appState.messages.length,
                   itemBuilder: (context, index) {
                     if (appState.messages[index].isSystemMessage) {
-                      return Text(appState.messages[index].message);
-                    } else {
                       return Container(
-                        padding: const EdgeInsets.all(2.0),
-                        color: Colors.grey,
-                        child: Text(
-                            '${appState.messages[index].message} - ${appState.messages[index].sender}'),
+                        margin: const EdgeInsets.only(top: 12),
+                        constraints: BoxConstraints(
+                            maxWidth: MediaQuery.of(context).size.width * 0.65),
+                        decoration: BoxDecoration(
+                          color: Colors.black12,
+                          borderRadius: BorderRadius.circular(10.0),
+                        ),
+                        child: Padding(
+                          padding: const EdgeInsets.all(10),
+                          child: Text(appState.messages[index].message),
+                        ),
+                      );
+                    } else {
+                      Radius messageRadius = const Radius.circular(10);
+
+                      return Container(
+                        alignment: appState.messages[index].sender == 'ME'
+                            ? Alignment.centerRight
+                            : Alignment.centerLeft,
+                        child: appState.messages[index].sender == 'ME'
+                            ? Container(
+                                margin: const EdgeInsets.only(top: 12),
+                                constraints: BoxConstraints(
+                                    maxWidth:
+                                        MediaQuery.of(context).size.width *
+                                            0.65),
+                                decoration: BoxDecoration(
+                                  color: Colors.grey[300],
+                                  borderRadius: BorderRadius.only(
+                                    topLeft: messageRadius,
+                                    topRight: messageRadius,
+                                    bottomLeft: messageRadius,
+                                  ),
+                                ),
+                                child: Padding(
+                                  padding: const EdgeInsets.all(10),
+                                  child: Text(appState.messages[index].message),
+                                ),
+                              )
+                            : Container(
+                                margin: const EdgeInsets.only(top: 12),
+                                constraints: BoxConstraints(
+                                    maxWidth:
+                                        MediaQuery.of(context).size.width *
+                                            0.65),
+                                decoration: BoxDecoration(
+                                  color: Colors.amberAccent,
+                                  borderRadius: BorderRadius.only(
+                                    bottomRight: messageRadius,
+                                    topRight: messageRadius,
+                                    bottomLeft: messageRadius,
+                                  ),
+                                ),
+                                child: Padding(
+                                  padding: const EdgeInsets.all(10),
+                                  child: Text(appState.messages[index].message),
+                                ),
+                              ),
                       );
                     }
                   },
@@ -163,7 +219,7 @@ class _HomePageState extends State<HomePage> with AppProviderMixin<HomePage> {
                       decoration: InputDecoration(
                         hintText: 'Type here',
                         filled: true,
-                        fillColor: Colors.grey[200],
+                        fillColor: Colors.grey[300],
                         focusedBorder: OutlineInputBorder(
                           borderSide: const BorderSide(color: Colors.amber),
                           borderRadius: BorderRadius.circular(10.0),
